@@ -280,7 +280,7 @@ def convert_row(row):
         "*Category":                                EBAY_CATEGORY,
         "StoreCategory":                            "0",
         "*Title":                                   row.get("title", ""),
-        "Subtitle":                                 subtitle,
+        "Subtitle":                                 "",
         "Relationship":                             "",
         "*ConditionID":                             condition_id,
         "*C:Graded":                                "Yes" if is_graded else "No",
