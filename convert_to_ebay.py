@@ -19,7 +19,7 @@ import sys
 # Configuration – edit these to match your setup
 # ---------------------------------------------------------------------------
 
-DEFAULT_INPUT = r"input\batch-941678-export (2).csv"
+DEFAULT_INPUT = r"input\batch-to-list.csv"
 DEFAULT_OUTPUT = r"output\ebay_listings.csv"
 
 # Fixed seller details
