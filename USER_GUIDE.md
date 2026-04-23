@@ -110,10 +110,6 @@ To change any of these, edit the constants near the top of the script.
 
 ---
 
-## Condition Mapping (continued)
-
----
-
 ## Setting Up the Environment (First Time / After Cloning)
 
 The `.venv` folder is not stored in git. To recreate it:
