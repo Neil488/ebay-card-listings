@@ -110,9 +110,43 @@ To change any of these, edit the constants near the top of the script.
 
 ---
 
+## Condition Mapping (continued)
+
+---
+
+## Setting Up the Environment (First Time / After Cloning)
+
+The `.venv` folder is not stored in git. To recreate it:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+> **Note:** If you see `No Python at '...'` when running the script, the venv is broken (e.g. Python was upgraded). Delete `.venv` and repeat the steps above.
+
+---
+
+## Git — What Is and Isn't Tracked
+
+| Tracked                  | Ignored                        |
+|--------------------------|--------------------------------|
+| `input\batch-to-list.csv`| `.venv\`                       |
+| `requirements.txt`       | `*.py`                         |
+| `USER_GUIDE.md`          | `output\ebay_listings.csv`     |
+| `.gitignore`             | `__pycache__\`, `*.pyc`        |
+
+Python source files (`*.py`) are excluded from git. If you need to version-control the script, remove the `*.py` line from `.gitignore`.
+
+---
+
 ## Typical Batch Workflow
 
 ```powershell
+# 0. Activate the venv (once per terminal session)
+.\.venv\Scripts\Activate.ps1
+
 # 1. Run the converter
 python convert_to_ebay.py
 
