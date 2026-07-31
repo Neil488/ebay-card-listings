@@ -1,0 +1,49 @@
+{
+  "ebay": {
+    "client_id": "YOUR_EBAY_CLIENT_ID",
+    "client_secret": "YOUR_EBAY_CLIENT_SECRET",
+    "seller_username": "your_ebay_handle",
+    "marketplace_id": "EBAY_AU",
+    "api_base_url": "https://api.ebay.com",
+    "oauth_scope": "https://api.ebay.com/oauth/api_scope"
+  },
+  "search": {
+    "buying_option": "FIXED_PRICE",
+    "result_limit": 10,
+    "candidate_pool_size": 30,
+    "min_match_score": 2.5,
+    "allow_weak_fallback": false,
+    "strict_variant_matching": true,
+    "strict_condition_matching": true,
+    "require_same_grading_status": true,
+    "require_same_condition_tier": false,
+    "min_shared_parallel_tags": 1,
+    "min_parallel_coverage_ratio": 0.6,
+    "max_query_words": 12,
+    "store_query": "trading card",
+    "store_fetch_page_size": 100,
+    "price_min": 1,
+    "price_max": 200,
+    "max_title_words": 6,
+    "ignore_words": [
+      "RC",
+      "ROOKIE",
+      "L@@K",
+      "INVEST",
+      "SSP",
+      "MINT",
+      "RARE",
+      "PSA",
+      "BGS"
+    ]
+  },
+  "files": {
+    "source": "live_store",
+    "input_csv": "output\\ebay_listings.csv",
+    "report_output_dir": "output"
+  },
+  "runtime": {
+    "request_timeout_seconds": 20,
+    "max_api_calls": 10
+  }
+}

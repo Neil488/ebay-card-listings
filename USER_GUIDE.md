@@ -124,6 +124,62 @@ pip install -r requirements.txt
 
 ---
 
+## Market Price Check Script
+
+Use `check_ebay_prices.py` to compare your listing prices against the cheapest competing eBay listings.
+
+### 1) Configure API keys and settings
+
+1. Open `price_check_config.json`.
+2. Set these values:
+	- `ebay.client_id`
+	- `ebay.client_secret`
+	- `ebay.seller_username`
+3. Optional: tune search filters like `search.price_max`, `search.result_limit`, and `search.ignore_words`.
+
+> `price_check_config.json` is ignored by git so your secrets stay local.
+
+### 2) Input file format
+
+By default, the checker reads `output\ebay_listings.csv` and uses:
+- `*Title` as the card title
+- `*StartPrice` as your price
+
+It also supports a simple custom CSV with columns:
+- `title`
+- `my_price`
+
+### 3) Run it
+
+```powershell
+python check_ebay_prices.py
+```
+
+Optional arguments:
+
+```powershell
+python check_ebay_prices.py [input_csv] [output_csv] [config_json]
+```
+
+Example:
+
+```powershell
+python check_ebay_prices.py "output\ebay_listings.csv" "output\my_price_report.csv" "price_check_config.json"
+```
+
+### 4) Output
+
+A report is written to `output\ebay_price_check_YYYY-MM-DD.csv` (or your custom output path) with:
+- Date
+- Card Title
+- My Price
+- Cheapest Comp Total (item + shipping)
+- Difference
+- Status (`OVERPRICED`, `COMPETITIVE`, or `NO COMP FOUND`)
+- Comp Link
+
+---
+
 ## Git — What Is and Isn't Tracked
 
 | Tracked                  | Ignored                        |
