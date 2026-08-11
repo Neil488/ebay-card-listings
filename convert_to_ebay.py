@@ -12,7 +12,9 @@ If no arguments are given, default paths are used (see DEFAULT_* below).
 """
 
 import csv
+from datetime import datetime, time, timedelta, timezone
 import os
+import re
 import sys
 
 # ---------------------------------------------------------------------------
@@ -22,14 +24,28 @@ import sys
 DEFAULT_INPUT = r"input\batch-to-list.csv"
 DEFAULT_OUTPUT = r"output\ebay_listings.csv"
 
+# Listing schedule configuration
+SCHEDULE_LISTINGS = True
+SCHEDULE_TIME_AEST = "17:00"  # 24h format, e.g. 17:00 for 5:00 PM
+LISTINGS_PER_DAY = 3
+
+# Storage grouping tag is now entered at runtime and required.
+
 # Fixed seller details
 LOCATION     = "Parkes,NSW"
 POSTAL_CODE  = "2870"
 EBAY_CATEGORY = "261328"   # Sports Trading Cards (eBay AU)
+DEFAULT_STORE_CATEGORY = "0"
+BASKETBALL_STORE_CATEGORY = "24310696015"
 
 SHIPPING_PROFILE = "Card Shipping - Standard Singles"
 RETURN_PROFILE   = "Default return policy"
 PAYMENT_PROFILE  = "Default Payment Policy"
+
+# Safe default package size for card mailers (used by shipping policy setup)
+PACKAGE_LENGTH_CM = 16
+PACKAGE_WIDTH_CM = 11
+PACKAGE_HEIGHT_CM = 1
 
 # Mapping from card category → eBay league
 SPORT_TO_LEAGUE = {
@@ -256,7 +272,77 @@ def build_subtitle(row, attrs, print_run):
     return subtitle[:55]
 
 
-def convert_row(row):
+def parse_schedule_time(time_str):
+    """Parse HH:MM and return (hour, minute)."""
+    parts = time_str.strip().split(":")
+    if len(parts) != 2:
+        raise ValueError(f"Invalid SCHEDULE_TIME_AEST value: {time_str}")
+
+    hour = int(parts[0])
+    minute = int(parts[1])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"Invalid SCHEDULE_TIME_AEST value: {time_str}")
+
+    return hour, minute
+
+
+def build_schedule_times(total_rows, listings_per_day, hour, minute):
+    """
+    Build per-row schedule timestamps in AEST.
+
+    Rows are grouped by day using listings_per_day. Each day gets the same
+    activation time (hour:minute).
+    """
+    if total_rows <= 0:
+        return []
+
+    if listings_per_day < 1:
+        listings_per_day = 1
+
+    aest = timezone(timedelta(hours=10), name="AEST")
+    now_aest = datetime.now(timezone.utc).astimezone(aest)
+
+    start_date = now_aest.date()
+    target_today = datetime.combine(start_date, time(hour, minute), tzinfo=aest)
+    if now_aest >= target_today:
+        start_date = start_date + timedelta(days=1)
+
+    scheduled = []
+    for idx in range(total_rows):
+        day_offset = idx // listings_per_day
+        day = start_date + timedelta(days=day_offset)
+        schedule_dt = datetime.combine(day, time(hour, minute), tzinfo=aest)
+        scheduled.append(schedule_dt.strftime("%Y-%m-%d %H:%M:%S"))
+
+    return scheduled
+
+
+def prompt_group_tag():
+    """Prompt for required storage section tag in terminal (e.g. AB5)."""
+    while True:
+        entered = input("Enter storage section tag (required, e.g. AB5): ").strip().upper()
+        if entered:
+            return entered
+        print("Section tag is required.")
+
+
+def confirm_run(group_tag, total_rows):
+    """Ask for a yes/no confirmation before writing output CSV."""
+    group_text = group_tag or "(none)"
+    print("\nReady to generate eBay upload CSV with:")
+    print(f"- Listings: {total_rows}")
+    print(f"- Group tag: {group_text}")
+    print(f"- Group note: {'Group: ' + group_tag if group_tag else '(none)'}")
+    print(f"- Label prefix: {group_tag + '-' if group_tag else '(none)'}")
+    print(
+        "- Package size target (shipping policy): "
+        f"{PACKAGE_LENGTH_CM} x {PACKAGE_WIDTH_CM} x {PACKAGE_HEIGHT_CM} cm"
+    )
+    answer = input("Proceed? [y/N]: ").strip().lower()
+    return answer in {"y", "yes"}
+
+
+def convert_row(row, group_tag=""):
     """Map one input CSV row to one eBay output CSV row (as a dict)."""
     attrs      = parse_attrs(row)
     is_graded  = row.get("graded", "").strip().lower() == "yes"
@@ -265,7 +351,13 @@ def convert_row(row):
     is_mem     = "MEM" in attrs
 
     condition_id, card_condition = map_condition(row.get("condition", ""))
-    league = SPORT_TO_LEAGUE.get(row.get("category", "").strip().upper(), "")
+    category = row.get("category", "").strip().upper()
+    league = SPORT_TO_LEAGUE.get(category, "")
+    store_category = (
+        BASKETBALL_STORE_CATEGORY
+        if category == "BASKETBALL"
+        else DEFAULT_STORE_CATEGORY
+    )
 
     front = row.get("front_image", "").strip()
     back  = row.get("back_image", "").strip()
@@ -276,9 +368,9 @@ def convert_row(row):
 
     return {
         "*Action(SiteID=AU|Country=AU|Currency=AUD|Version=1193|CC=UTF-8)": "Add",
-        "CustomLabel":                              row.get("sku", ""),
+        "CustomLabel":                              f"{group_tag}-{row.get('sku', '')}" if group_tag else row.get("sku", ""),
         "*Category":                                EBAY_CATEGORY,
-        "StoreCategory":                            "0",
+        "StoreCategory":                            store_category,
         "*Title":                                   row.get("title", ""),
         "Subtitle":                                 "",
         "Relationship":                             "",
@@ -347,7 +439,7 @@ def convert_row(row):
         "ReturnsWithinOption":                      "Days_14",
         "RefundOption":                             "MoneyBackOrReplacement",
         "ShippingCostPaidByOption":                 "Buyer",
-        "AdditionalDetails":                        "",
+        "AdditionalDetails":                        f"Group: {group_tag}" if group_tag else "",
         "ShippingProfileName":                      SHIPPING_PROFILE,
         "ReturnProfileName":                        RETURN_PROFILE,
         "PaymentProfileName":                       PAYMENT_PROFILE,
@@ -377,11 +469,35 @@ def main():
         print(f"ERROR: Input file not found: {input_file}")
         sys.exit(1)
 
+    try:
+        group_tag = prompt_group_tag()
+    except EOFError:
+        print("ERROR: Section tag is required and no terminal input was provided.")
+        sys.exit(1)
+
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     with open(input_file, newline="", encoding="utf-8-sig") as f_in:
         reader = csv.DictReader(f_in)
         rows = list(reader)
+
+    try:
+        if not confirm_run(group_tag, len(rows)):
+            print("Cancelled. No output file was written.")
+            sys.exit(0)
+    except EOFError:
+        # Non-interactive run: proceed without confirmation prompt.
+        pass
+
+    schedule_times = []
+    if SCHEDULE_LISTINGS:
+        hour, minute = parse_schedule_time(SCHEDULE_TIME_AEST)
+        schedule_times = build_schedule_times(
+            total_rows=len(rows),
+            listings_per_day=LISTINGS_PER_DAY,
+            hour=hour,
+            minute=minute,
+        )
 
     num_cols = len(FIELD_HEADERS)
     info_row = ["Info", "Version=1.0.0", "Template=fx_category_template_EBAY_AU"] + [""] * (num_cols - 3)
@@ -390,11 +506,24 @@ def main():
         writer = csv.writer(f_out)
         writer.writerow(info_row)
         writer.writerow(FIELD_HEADERS)
-        for row in rows:
-            mapped = convert_row(row)
+        for idx, row in enumerate(rows):
+            mapped = convert_row(row, group_tag=group_tag)
+            if schedule_times:
+                mapped["ScheduleTime"] = schedule_times[idx]
             writer.writerow([mapped.get(h, "") for h in FIELD_HEADERS])
 
     print(f"Done! Converted {len(rows)} card(s) → {output_file}")
+    if schedule_times:
+        print(
+            f"Scheduled at {SCHEDULE_TIME_AEST} AEST, "
+            f"{LISTINGS_PER_DAY} listing(s) per day."
+        )
+    print(
+        "Package size target: "
+        f"{PACKAGE_LENGTH_CM} x {PACKAGE_WIDTH_CM} x {PACKAGE_HEIGHT_CM} cm"
+    )
+    if group_tag:
+        print(f"Applied group tag: {group_tag}")
 
 
 if __name__ == "__main__":
