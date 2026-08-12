@@ -24,3 +24,4 @@ Also add storage group tagging in listing notes and custom labels.
 - Generated cadence was 3 listings/day at 17:00 AEST across 4 days.
 - Group tag applied as `Group: AB5` in `AdditionalDetails`.
 - `CustomLabel` was prefixed with `AB5-` for each listing.
+- ScheduleTime now writes UTC values so eBay lands listings at 17:00 AEST (e.g. `07:00:00` UTC).

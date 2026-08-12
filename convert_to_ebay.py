@@ -272,6 +272,23 @@ def build_subtitle(row, attrs, print_run):
     return subtitle[:55]
 
 
+def parse_price(value):
+    """Parse a sale price string and return float, or None if invalid."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    # Keep digits, minus sign, and decimal point for common CSV price formats.
+    cleaned = re.sub(r"[^\d.\-]", "", text)
+    if cleaned in {"", "-", ".", "-."}:
+        return None
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 def parse_schedule_time(time_str):
     """Parse HH:MM and return (hour, minute)."""
     parts = time_str.strip().split(":")
@@ -288,10 +305,14 @@ def parse_schedule_time(time_str):
 
 def build_schedule_times(total_rows, listings_per_day, hour, minute):
     """
-    Build per-row schedule timestamps in AEST.
+    Build per-row schedule timestamps from an AEST target time.
 
     Rows are grouped by day using listings_per_day. Each day gets the same
     activation time (hour:minute).
+
+    eBay bulk upload may interpret ScheduleTime as UTC. To ensure listings
+    go live at the intended AEST time, this function converts each AEST target
+    datetime into a UTC timestamp string.
     """
     if total_rows <= 0:
         return []
@@ -311,8 +332,9 @@ def build_schedule_times(total_rows, listings_per_day, hour, minute):
     for idx in range(total_rows):
         day_offset = idx // listings_per_day
         day = start_date + timedelta(days=day_offset)
-        schedule_dt = datetime.combine(day, time(hour, minute), tzinfo=aest)
-        scheduled.append(schedule_dt.strftime("%Y-%m-%d %H:%M:%S"))
+        schedule_dt_aest = datetime.combine(day, time(hour, minute), tzinfo=aest)
+        schedule_dt_utc = schedule_dt_aest.astimezone(timezone.utc)
+        scheduled.append(schedule_dt_utc.strftime("%Y-%m-%d %H:%M:%S"))
 
     return scheduled
 
@@ -362,6 +384,10 @@ def convert_row(row, group_tag=""):
     front = row.get("front_image", "").strip()
     back  = row.get("back_image", "").strip()
     pic_url = f"{front} | {back}" if front and back else front or back
+
+    sale_price_raw = row.get("sale_price", "")
+    sale_price_value = parse_price(sale_price_raw)
+    best_offer_enabled = "1" if sale_price_value is not None and sale_price_value > 10 else "0"
 
     print_run = extract_print_run(row.get("title", ""))
     subtitle  = build_subtitle(row, attrs, print_run)
@@ -416,7 +442,7 @@ def convert_row(row, group_tag=""):
         "*Description":                             row.get("description", ""),
         "*Format":                                  "FixedPrice",
         "*Duration":                                "GTC",
-        "*StartPrice":                              row.get("sale_price", ""),
+        "*StartPrice":                              sale_price_raw,
         "BuyItNowPrice":                            "",
         "*Quantity":                                "1",
         "PayPalAccepted":                           "0",
@@ -446,7 +472,7 @@ def convert_row(row, group_tag=""):
         "TakeBackPolicyID":                         "",
         "ProductCompliancePolicyID":                "",
         "ScheduleTime":                             "",
-        "BestOfferEnabled":                         "1",
+        "BestOfferEnabled":                         best_offer_enabled,
         "MinimumBestOfferPrice":                    "",
         "BestOfferAutoAcceptPrice":                 "",
         "*C:Rookie":                                "Yes" if is_rookie else "No",
