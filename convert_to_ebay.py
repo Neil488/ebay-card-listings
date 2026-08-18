@@ -38,9 +38,16 @@ EBAY_CATEGORY = "261328"   # Sports Trading Cards (eBay AU)
 DEFAULT_STORE_CATEGORY = "0"
 BASKETBALL_STORE_CATEGORY = "24310696015"
 
-SHIPPING_PROFILE = "Card Shipping - Standard Singles"
+SHIPPING_PROFILE_UNDER_15 = "Card Shipping - Raw Singles Under $15"
+SHIPPING_PROFILE_15_PLUS = "Cards Singles - Raw singles $15 plus"
 RETURN_PROFILE   = "Default return policy"
 PAYMENT_PROFILE  = "Default Payment Policy"
+
+DESCRIPTION_APPEND_BLOCKS = (
+    """<div style="text-align: center;">
+<a href="https://ibb.co/0RcRVTtw"><img src="https://i.ibb.co/KpXpzdw1/shipping-policy.png" alt="shipping-policy" border="0"></a>
+</div>""",
+)
 
 # Safe default package size for card mailers (used by shipping policy setup)
 PACKAGE_LENGTH_CM = 16
@@ -272,6 +279,21 @@ def build_subtitle(row, attrs, print_run):
     return subtitle[:55]
 
 
+def truncate_title(title, max_len=80):
+    """eBay titles are limited to 80 characters; truncate cleanly if over."""
+    title = title.strip()
+    if len(title) <= max_len:
+        return title
+    return title[:max_len].rstrip()
+
+
+def build_description(description):
+    """Append the configured HTML blocks to the source listing description."""
+    sections = [description.strip()] if description.strip() else []
+    sections.extend(block.strip() for block in DESCRIPTION_APPEND_BLOCKS if block.strip())
+    return "\n\n".join(sections)
+
+
 def parse_price(value):
     """Parse a sale price string and return float, or None if invalid."""
     text = str(value or "").strip()
@@ -334,7 +356,8 @@ def build_schedule_times(total_rows, listings_per_day, hour, minute):
         day = start_date + timedelta(days=day_offset)
         schedule_dt_aest = datetime.combine(day, time(hour, minute), tzinfo=aest)
         schedule_dt_utc = schedule_dt_aest.astimezone(timezone.utc)
-        scheduled.append(schedule_dt_utc.strftime("%Y-%m-%d %H:%M:%S"))
+        # eBay File Exchange requires strict ISO 8601 UTC, e.g. 2026-08-13T07:00:00.000Z
+        scheduled.append(schedule_dt_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z"))
 
     return scheduled
 
@@ -388,16 +411,22 @@ def convert_row(row, group_tag=""):
     sale_price_raw = row.get("sale_price", "")
     sale_price_value = parse_price(sale_price_raw)
     best_offer_enabled = "1" if sale_price_value is not None and sale_price_value > 10 else "0"
+    shipping_profile = (
+        SHIPPING_PROFILE_UNDER_15
+        if sale_price_value is not None and sale_price_value < 15
+        else SHIPPING_PROFILE_15_PLUS
+    )
 
     print_run = extract_print_run(row.get("title", ""))
     subtitle  = build_subtitle(row, attrs, print_run)
+    title     = truncate_title(row.get("title", ""))
 
     return {
         "*Action(SiteID=AU|Country=AU|Currency=AUD|Version=1193|CC=UTF-8)": "Add",
         "CustomLabel":                              f"{group_tag}-{row.get('sku', '')}" if group_tag else row.get("sku", ""),
         "*Category":                                EBAY_CATEGORY,
         "StoreCategory":                            store_category,
-        "*Title":                                   row.get("title", ""),
+        "*Title":                                   title,
         "Subtitle":                                 "",
         "Relationship":                             "",
         "*ConditionID":                             condition_id,
@@ -439,7 +468,7 @@ def convert_row(row, group_tag=""):
         "C:Print Run":                              print_run,
         "PicURL":                                   pic_url,
         "GalleryType":                              "",
-        "*Description":                             row.get("description", ""),
+        "*Description":                             build_description(row.get("description", "")),
         "*Format":                                  "FixedPrice",
         "*Duration":                                "GTC",
         "*StartPrice":                              sale_price_raw,
@@ -466,7 +495,7 @@ def convert_row(row, group_tag=""):
         "RefundOption":                             "MoneyBackOrReplacement",
         "ShippingCostPaidByOption":                 "Buyer",
         "AdditionalDetails":                        f"Group: {group_tag}" if group_tag else "",
-        "ShippingProfileName":                      SHIPPING_PROFILE,
+        "ShippingProfileName":                      shipping_profile,
         "ReturnProfileName":                        RETURN_PROFILE,
         "PaymentProfileName":                       PAYMENT_PROFILE,
         "TakeBackPolicyID":                         "",
@@ -532,13 +561,21 @@ def main():
         writer = csv.writer(f_out)
         writer.writerow(info_row)
         writer.writerow(FIELD_HEADERS)
+        truncated_titles = []
         for idx, row in enumerate(rows):
             mapped = convert_row(row, group_tag=group_tag)
             if schedule_times:
                 mapped["ScheduleTime"] = schedule_times[idx]
+            original_title = row.get("title", "").strip()
+            if len(original_title) > 80:
+                truncated_titles.append((mapped.get("CustomLabel", ""), original_title))
             writer.writerow([mapped.get(h, "") for h in FIELD_HEADERS])
 
     print(f"Done! Converted {len(rows)} card(s) → {output_file}")
+    if truncated_titles:
+        print(f"\nWARNING: {len(truncated_titles)} title(s) exceeded 80 characters and were truncated:")
+        for label, original in truncated_titles:
+            print(f"  [{label}] {original}")
     if schedule_times:
         print(
             f"Scheduled at {SCHEDULE_TIME_AEST} AEST, "
