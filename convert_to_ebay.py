@@ -311,6 +311,25 @@ def parse_price(value):
         return None
 
 
+def format_listing_price(value):
+    """Round a price down to the nearest eBay-friendly .49 or .99 price."""
+    parsed = parse_price(value)
+    if parsed is None or parsed < 0:
+        return value
+
+    whole = int(parsed)
+    cents = round(parsed - whole, 2)
+    if cents >= 0.99:
+        ending = 0.99
+    elif cents >= 0.49:
+        ending = 0.49
+    else:
+        whole -= 1
+        ending = 0.99
+
+    return f"{whole + ending:.2f}"
+
+
 def parse_schedule_time(time_str):
     """Parse HH:MM and return (hour, minute)."""
     parts = time_str.strip().split(":")
@@ -409,7 +428,8 @@ def convert_row(row, group_tag=""):
     pic_url = f"{front} | {back}" if front and back else front or back
 
     sale_price_raw = row.get("sale_price", "")
-    sale_price_value = parse_price(sale_price_raw)
+    listing_price = format_listing_price(sale_price_raw)
+    sale_price_value = parse_price(listing_price)
     best_offer_enabled = "1" if sale_price_value is not None and sale_price_value > 10 else "0"
     shipping_profile = (
         SHIPPING_PROFILE_UNDER_15
@@ -471,7 +491,7 @@ def convert_row(row, group_tag=""):
         "*Description":                             build_description(row.get("description", "")),
         "*Format":                                  "FixedPrice",
         "*Duration":                                "GTC",
-        "*StartPrice":                              sale_price_raw,
+        "*StartPrice":                              listing_price,
         "BuyItNowPrice":                            "",
         "*Quantity":                                "1",
         "PayPalAccepted":                           "0",
